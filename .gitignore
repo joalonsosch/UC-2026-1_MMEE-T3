@@ -141,3 +141,12 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# ---- Python (tarea-3/despacho_recursos) ----
+# Entorno virtual
+.venv/
+# Artefactos de Python
+__pycache__/
+*.pyc
+# Checkpoints de Jupyter
+.ipynb_checkpoints/
