@@ -1,5 +1,358 @@
 <!DOCTYPE html>
 <html lang="es">
-<head><meta charset="UTF-8"><title>Tarea 3 · en construcción</title></head>
-<body><p>Tarea 3 — sitio en construcción.</p></body>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Simulador de Despacho de Recursos de Emergencia · RM</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#ffffff; --ink:#1c2733; --muted:#5a6b7b;
+    --agg:#3b6fb0; --zon:#e0883b; --line:#dde3ea; --ok:#2e9e5b; --bad:#d0453b;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#12171d; --card:#1b222b; --ink:#e7edf3; --muted:#9fb0c0; --line:#2b343f; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);line-height:1.5}
+  .wrap{max-width:920px;margin:0 auto;padding:22px 16px 60px}
+  header h1{font-size:1.5rem;margin:0 0 6px}
+  header p{color:var(--muted);margin:0 0 18px;font-size:.95rem}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
+  .modes{display:flex;gap:8px;margin-bottom:4px;flex-wrap:wrap}
+  .modes button{flex:1;min-width:140px;padding:10px 12px;border:1px solid var(--line);background:transparent;color:var(--ink);
+    border-radius:9px;cursor:pointer;font-size:.95rem;font-weight:600}
+  .modes button.active{background:var(--agg);border-color:var(--agg);color:#fff}
+  .modes button.active.zon{background:var(--zon);border-color:var(--zon)}
+  .ctrl{display:flex;flex-direction:column;gap:4px;margin:14px 0}
+  .ctrl .row{display:flex;justify-content:space-between;align-items:baseline}
+  .ctrl label{font-weight:600;font-size:.92rem}
+  .ctrl output{font-variant-numeric:tabular-nums;color:var(--muted);font-size:.9rem}
+  input[type=range]{width:100%;accent-color:var(--agg)}
+  .zon input[type=range]{accent-color:var(--zon)}
+  .chk{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:.92rem}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .kpi{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+  .kpi .v{font-size:1.7rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.1}
+  .kpi .l{font-size:.8rem;color:var(--muted);margin-top:3px}
+  .kpi .ic{font-size:.78rem;color:var(--muted);margin-top:2px}
+  .badge{display:inline-block;padding:2px 9px;border-radius:20px;font-size:.8rem;font-weight:700;color:#fff}
+  .badge.ok{background:var(--ok)} .badge.bad{background:var(--bad)}
+  canvas{width:100%;height:auto;display:block}
+  .muted{color:var(--muted)} .small{font-size:.82rem}
+  footer{color:var(--muted);font-size:.82rem;margin-top:8px}
+  code{background:var(--bg);padding:1px 5px;border-radius:5px;border:1px solid var(--line)}
+  .status{font-size:.82rem;color:var(--muted);min-height:1.1em}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Simulador de Despacho de Recursos de Emergencia</h1>
+    <p>Región Metropolitana · modelo de cola de pérdida (sin espera) sobre datos reales SIGEB (2025).
+       Ajusta los parámetros y la simulación corre en tu navegador (30 réplicas, semillas fijas).</p>
+  </header>
+
+  <div class="card">
+    <div class="modes">
+      <button id="mAgg" class="active">Modo agregado (una flota RM)</button>
+      <button id="mZon" class="zon">Modo por comuna</button>
+    </div>
+    <p class="small muted" id="modeDesc"></p>
+
+    <div class="ctrl" id="ctrlFlota">
+      <div class="row"><label id="lblFlota">Flota (unidades)</label><output id="oFlota"></output></div>
+      <input type="range" id="rFlota" min="1" max="15" step="1" value="7">
+    </div>
+
+    <div class="ctrl">
+      <div class="row"><label>Tiempo medio de servicio</label><output id="oServ"></output></div>
+      <input type="range" id="rServ" min="20" max="90" step="5" value="45">
+    </div>
+
+    <div class="ctrl">
+      <div class="row"><label>Escala de demanda</label><output id="oDem"></output></div>
+      <input type="range" id="rDem" min="0.5" max="2" step="0.1" value="1">
+    </div>
+
+    <label class="chk" id="wrapRef" style="display:none">
+      <input type="checkbox" id="cRef"> Permitir refuerzo entre comunas (préstamo local + 1 donante)
+    </label>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="card">
+    <div class="kpis">
+      <div class="kpi">
+        <div class="v" id="kBloq">—</div>
+        <div class="l">Probabilidad de bloqueo <span id="kBadge"></span></div>
+        <div class="ic" id="kIC"></div>
+      </div>
+      <div class="kpi"><div class="v" id="kA">—</div><div class="l">Emergencias atendidas (media/réplica)</div></div>
+      <div class="kpi"><div class="v" id="kB">—</div><div class="l">Bloqueadas (media/réplica)</div></div>
+      <div class="kpi"><div class="v" id="kX">—</div><div class="l" id="kXl">Utilización media</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="small muted" id="chartTitle"></div>
+    <canvas id="chart" width="880" height="340"></canvas>
+  </div>
+
+  <footer>
+    Umbral de servicio objetivo: <strong>5%</strong> de bloqueo. Llegadas: Poisson no homogéneo por hora
+    (thinning); unidades por emergencia: distribución empírica (bootstrap); servicio: Exponencial.
+    Parámetros sincronizados con el notebook <code>despacho_recursos.ipynb</code>. La aleatoriedad usa
+    un PRNG sembrado (mulberry32), por lo que el modelo es equivalente al de Python aunque el generador difiera.
+  </footer>
+</div>
+
+<script>
+// Motor de simulación (port JS de motor.py). Cola de pérdida, calendario de eventos.
+'use strict';
+
+// PRNG sembrable (mulberry32) -> uniforme [0,1)
+function makeRng(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+const expSample = (rng, mean) => -mean * Math.log(1 - rng());
+
+// Min-heap binario por .t
+class MinHeap {
+  constructor() { this.a = []; }
+  size() { return this.a.length; }
+  push(x) {
+    const a = this.a; a.push(x); let i = a.length - 1;
+    while (i > 0) { const p = (i - 1) >> 1; if (a[p].t <= a[i].t) break;[a[p], a[i]] = [a[i], a[p]]; i = p; }
+  }
+  pop() {
+    const a = this.a, top = a[0], last = a.pop();
+    if (a.length) { a[0] = last; let i = 0; const n = a.length;
+      for (;;) { let l = 2 * i + 1, r = l + 1, m = i;
+        if (l < n && a[l].t < a[m].t) m = l; if (r < n && a[r].t < a[m].t) m = r;
+        if (m === i) break;[a[m], a[i]] = [a[i], a[m]]; i = m; } }
+    return top;
+  }
+}
+
+// Muestreador de distribución empírica (histograma {valor: conteo})
+function makeSampler(hist) {
+  const entries = Object.keys(hist).map(k => [+k, hist[k]]).sort((x, y) => x[0] - y[0]);
+  const total = entries.reduce((s, e) => s + e[1], 0);
+  const cum = []; let acc = 0;
+  for (const [v, c] of entries) { acc += c; cum.push([v, acc / total]); }
+  return function (rng) { const u = rng(); for (const [v, p] of cum) if (u <= p) return v; return cum[cum.length - 1][0]; };
+}
+
+// Llegadas: Poisson no homogéneo por thinning; inter-llegadas por transformada inversa exponencial
+function generarLlegadas(tasaHoraria, dias, rng) {
+  let lamMax = 0; for (const v of tasaHoraria) if (v > lamMax) lamMax = v; lamMax /= 60;
+  const T = dias * 24 * 60, out = []; let t = 0;
+  for (;;) {
+    t += -Math.log(1 - rng()) / lamMax;
+    if (t >= T) break;
+    const hora = Math.floor(t / 60) % 24;
+    if (rng() < (tasaHoraria[hora] / 60) / lamMax) out.push(t);
+  }
+  return out;
+}
+
+function simReplicaAgregado(flota, tasaHoraria, sampler, mediaServ, dias, warmup, rng) {
+  const warmupMin = warmup * 24 * 60, Tfin = (warmup + dias) * 24 * 60;
+  const heap = new MinHeap();
+  for (const t of generarLlegadas(tasaHoraria, warmup + dias, rng)) heap.push({ t, tipo: 0, k: 0 });
+  let ocup = 0, atend = 0, bloq = 0, area = 0, tPrev = 0;
+  while (heap.size()) {
+    const ev = heap.pop();
+    const lo = Math.max(tPrev, warmupMin), hi = Math.min(ev.t, Tfin);
+    if (hi > lo) area += ocup * (hi - lo);
+    tPrev = ev.t;
+    if (ev.tipo === 0) {
+      const need = sampler(rng);
+      if (ocup + need <= flota) {
+        ocup += need;
+        for (let i = 0; i < need; i++) heap.push({ t: ev.t + expSample(rng, mediaServ), tipo: 1, k: 1 });
+        if (ev.t >= warmupMin) atend++;
+      } else if (ev.t >= warmupMin) bloq++;
+    } else ocup -= ev.k;
+  }
+  const n = atend + bloq;
+  return { pBloqueo: n ? 100 * bloq / n : 0, util: flota ? area / (flota * (Tfin - warmupMin)) : 0, atend, bloq };
+}
+
+function simReplicaZonas(flotaArr, thz, samplers, mediaServ, dias, warmup, rng, refuerzo) {
+  const Z = flotaArr.length, warmupMin = warmup * 24 * 60, Tfin = (warmup + dias) * 24 * 60;
+  const heap = new MinHeap();
+  for (let zi = 0; zi < Z; zi++) for (const t of generarLlegadas(thz[zi], warmup + dias, rng)) heap.push({ t, tipo: 0, zi });
+  const ocup = new Array(Z).fill(0), atendZ = new Array(Z).fill(0), bloqZ = new Array(Z).fill(0);
+  let refuerzos = 0;
+  const agendar = (owner, nn, t) => { for (let i = 0; i < nn; i++) heap.push({ t: t + expSample(rng, mediaServ), tipo: 1, owner }); ocup[owner] += nn; };
+  while (heap.size()) {
+    const ev = heap.pop();
+    if (ev.tipo === 1) { ocup[ev.owner] -= 1; continue; }
+    const zi = ev.zi, contar = ev.t >= warmupMin, need = samplers[zi](rng), libres = flotaArr[zi] - ocup[zi];
+    if (libres >= need) { agendar(zi, need, ev.t); if (contar) atendZ[zi]++; }
+    else if (refuerzo) {
+      const faltan = need - libres; let donor = -1, best = -1;
+      for (let y = 0; y < Z; y++) { if (y === zi) continue; const lib = flotaArr[y] - ocup[y]; if (lib > best) { best = lib; donor = y; } }
+      if (best >= faltan) { if (libres > 0) agendar(zi, libres, ev.t); agendar(donor, faltan, ev.t); if (contar) { atendZ[zi]++; refuerzos++; } }
+      else if (contar) bloqZ[zi]++;
+    } else if (contar) bloqZ[zi]++;
+  }
+  const atendTot = atendZ.reduce((a, b) => a + b, 0), bloqTot = bloqZ.reduce((a, b) => a + b, 0), n = atendTot + bloqTot;
+  return { pBloqueo: n ? 100 * bloqTot / n : 0, pctRefuerzo: atendTot ? 100 * refuerzos / atendTot : 0, atend: atendTot, bloq: bloqTot,
+    bloqZona: bloqZ.map((b, i) => { const d = atendZ[i] + bloqZ[i]; return d ? 100 * b / d : 0; }) };
+}
+
+function resumen(vals) {
+  const n = vals.length, m = vals.reduce((a, b) => a + b, 0) / n;
+  const s = Math.sqrt(vals.reduce((a, b) => a + (b - m) ** 2, 0) / (n - 1));
+  const h = 1.96 * s / Math.sqrt(n);
+  return { media: m, sd: s, low: m - h, high: m + h };
+}
+const PARAMS = {"zonas": ["Santiago", "Las Condes", "Providencia", "Estación Central", "Renca", "Independencia", "Vitacura", "Lo Barnechea", "Recoleta", "Resto RM"], "tasa_horaria": [0.947945205479452, 0.7095890410958904, 0.5698630136986301, 0.4273972602739726, 0.3863013698630137, 0.4136986301369863, 0.4438356164383562, 0.6356164383561644, 0.9287671232876712, 1.084931506849315, 1.1753424657534246, 1.356164383561644, 1.5671232876712329, 1.5013698630136987, 1.5452054794520549, 1.484931506849315, 1.5835616438356164, 1.5506849315068494, 1.8273972602739725, 1.7287671232876711, 1.643835616438356, 1.5561643835616439, 1.4136986301369863, 1.1315068493150684], "tasa_horaria_zona": [[0.32602739726027397, 0.2602739726027397, 0.2356164383561644, 0.17534246575342466, 0.15342465753424658, 0.1232876712328767, 0.18356164383561643, 0.2136986301369863, 0.3095890410958904, 0.33972602739726027, 0.3917808219178082, 0.4684931506849315, 0.4684931506849315, 0.5232876712328767, 0.5342465753424658, 0.5287671232876713, 0.4767123287671233, 0.4821917808219178, 0.6027397260273972, 0.5506849315068493, 0.5589041095890411, 0.4767123287671233, 0.5260273972602739, 0.4383561643835616], [0.09315068493150686, 0.07123287671232877, 0.03561643835616438, 0.03561643835616438, 0.03561643835616438, 0.04657534246575343, 0.03287671232876712, 0.08767123287671233, 0.16164383561643836, 0.20273972602739726, 0.2, 0.2136986301369863, 0.2219178082191781, 0.2356164383561644, 0.2328767123287671, 0.2, 0.27945205479452057, 0.23835616438356164, 0.27671232876712326, 0.3013698630136986, 0.28493150684931506, 0.27123287671232876, 0.2493150684931507, 0.1232876712328767], [0.09863013698630137, 0.057534246575342465, 0.043835616438356165, 0.019178082191780823, 0.0273972602739726, 0.03287671232876712, 0.03561643835616438, 0.06575342465753424, 0.10684931506849316, 0.1232876712328767, 0.16164383561643836, 0.1917808219178082, 0.18904109589041096, 0.15616438356164383, 0.16986301369863013, 0.18356164383561643, 0.17534246575342466, 0.18082191780821918, 0.20273972602739726, 0.2191780821917808, 0.17534246575342466, 0.14246575342465753, 0.13150684931506848, 0.09041095890410959], [0.12876712328767123, 0.09041095890410959, 0.09315068493150686, 0.030136986301369864, 0.0410958904109589, 0.06575342465753424, 0.07397260273972603, 0.07397260273972603, 0.1178082191780822, 0.09315068493150686, 0.10410958904109589, 0.10684931506849316, 0.1726027397260274, 0.136986301369863, 0.14520547945205478, 0.1232876712328767, 0.13424657534246576, 0.15616438356164383, 0.1917808219178082, 0.16164383561643836, 0.1917808219178082, 0.1863013698630137, 0.136986301369863, 0.1178082191780822], [0.10410958904109589, 0.07671232876712329, 0.043835616438356165, 0.043835616438356165, 0.03287671232876712, 0.0547945205479452, 0.043835616438356165, 0.04657534246575343, 0.06027397260273973, 0.04657534246575343, 0.052054794520547946, 0.08493150684931507, 0.12054794520547946, 0.09863013698630137, 0.12054794520547946, 0.10136986301369863, 0.10410958904109589, 0.11232876712328767, 0.16712328767123288, 0.10410958904109589, 0.08493150684931507, 0.11506849315068493, 0.08767123287671233, 0.09315068493150686], [0.06301369863013699, 0.04657534246575343, 0.021917808219178082, 0.0273972602739726, 0.024657534246575342, 0.0273972602739726, 0.005479452054794521, 0.0410958904109589, 0.049315068493150684, 0.06301369863013699, 0.06575342465753424, 0.049315068493150684, 0.07945205479452055, 0.0958904109589041, 0.07397260273972603, 0.07397260273972603, 0.07397260273972603, 0.08493150684931507, 0.06301369863013699, 0.06027397260273973, 0.1095890410958904, 0.07671232876712329, 0.06575342465753424, 0.08493150684931507], [0.03561643835616438, 0.021917808219178082, 0.030136986301369864, 0.01643835616438356, 0.0136986301369863, 0.00821917808219178, 0.00821917808219178, 0.024657534246575342, 0.0410958904109589, 0.07123287671232877, 0.052054794520547946, 0.057534246575342465, 0.10684931506849316, 0.08493150684931507, 0.08767123287671233, 0.07671232876712329, 0.08493150684931507, 0.07123287671232877, 0.08493150684931507, 0.10684931506849316, 0.07397260273972603, 0.07397260273972603, 0.0410958904109589, 0.03287671232876712], [0.038356164383561646, 0.021917808219178082, 0.01643835616438356, 0.01643835616438356, 0.0136986301369863, 0.005479452054794521, 0.021917808219178082, 0.021917808219178082, 0.0273972602739726, 0.052054794520547946, 0.06027397260273973, 0.07945205479452055, 0.09041095890410959, 0.057534246575342465, 0.07123287671232877, 0.07123287671232877, 0.13424657534246576, 0.09863013698630137, 0.07945205479452055, 0.0821917808219178, 0.049315068493150684, 0.07945205479452055, 0.0547945205479452, 0.049315068493150684], [0.03561643835616438, 0.030136986301369864, 0.024657534246575342, 0.03287671232876712, 0.030136986301369864, 0.030136986301369864, 0.030136986301369864, 0.03287671232876712, 0.030136986301369864, 0.057534246575342465, 0.0547945205479452, 0.049315068493150684, 0.0684931506849315, 0.07397260273972603, 0.052054794520547946, 0.052054794520547946, 0.052054794520547946, 0.07671232876712329, 0.0684931506849315, 0.0821917808219178, 0.07123287671232877, 0.06301369863013699, 0.07397260273972603, 0.0410958904109589], [0.024657534246575342, 0.03287671232876712, 0.024657534246575342, 0.030136986301369864, 0.0136986301369863, 0.019178082191780823, 0.00821917808219178, 0.0273972602739726, 0.024657534246575342, 0.03561643835616438, 0.03287671232876712, 0.0547945205479452, 0.049315068493150684, 0.038356164383561646, 0.057534246575342465, 0.07397260273972603, 0.0684931506849315, 0.049315068493150684, 0.09041095890410959, 0.06027397260273973, 0.043835616438356165, 0.07123287671232877, 0.04657534246575343, 0.06027397260273973]], "unid_hist": {"1": 3168, "2": 4987, "3": 1044, "4": 512, "5": 195, "6": 50, "7": 19, "8": 9, "9": 2, "10": 2, "13": 4, "14": 14, "15": 12, "16": 8, "17": 7, "18": 11, "19": 7, "20": 6, "21": 2, "22": 3, "23": 1, "26": 1, "27": 2, "28": 1, "29": 2, "31": 3, "32": 2, "35": 2, "36": 2, "58": 1}, "unid_hist_zona": [{"1": 993, "2": 1708, "3": 324, "4": 206, "5": 105, "6": 17, "7": 7, "8": 5, "9": 1, "14": 4, "15": 7, "16": 5, "17": 3, "18": 7, "19": 4, "20": 3, "22": 3, "26": 1, "27": 1, "29": 1, "31": 2, "32": 2, "35": 2, "58": 1}, {"1": 413, "2": 862, "3": 139, "4": 73, "5": 8, "6": 4, "7": 3, "8": 1, "10": 1, "14": 1, "15": 1, "17": 1, "28": 1}, {"1": 270, "2": 608, "3": 123, "4": 62, "5": 12, "6": 5, "7": 2, "8": 1, "15": 1, "16": 1, "17": 1, "19": 1, "29": 1}, {"1": 365, "2": 472, "3": 107, "4": 56, "5": 28, "6": 8, "7": 2, "13": 2, "14": 5, "15": 2, "16": 1, "36": 1}, {"1": 275, "2": 309, "3": 102, "4": 15, "5": 13, "6": 5, "8": 1, "13": 2, "14": 1, "17": 1, "18": 1, "19": 1, "20": 2, "21": 1, "27": 1}, {"1": 112, "2": 286, "3": 66, "4": 38, "5": 6, "6": 5, "7": 1, "10": 1, "14": 1, "15": 1, "16": 1, "18": 2, "23": 1}, {"1": 104, "2": 294, "3": 50, "4": 21, "5": 4, "6": 1, "7": 1, "8": 1, "9": 1}, {"1": 168, "2": 220, "3": 49, "4": 18, "5": 13, "6": 1, "7": 1, "20": 1, "21": 1}, {"1": 166, "2": 166, "3": 75, "4": 20, "5": 4, "6": 3, "7": 2, "14": 2, "17": 1, "18": 1, "19": 1, "31": 1, "36": 1}, {"1": 302, "2": 62, "3": 9, "4": 3, "5": 2, "6": 1}], "vol_zona": {"Santiago": 3412, "Las Condes": 1508, "Providencia": 1088, "Estación Central": 1049, "Renca": 730, "Independencia": 521, "Vitacura": 477, "Lo Barnechea": 472, "Recoleta": 443, "Resto RM": 379}, "flota_base": 7, "flota_base_zona": {"Santiago": 3, "Las Condes": 1, "Providencia": 1, "Estación Central": 1, "Renca": 1, "Independencia": 0, "Vitacura": 0, "Lo Barnechea": 0, "Recoleta": 0, "Resto RM": 0}, "media_serv": 45, "umbral": 5};
+
+// ---------- configuración ----------
+const DIAS=60, WARMUP=3, NREP=30, SWEEP_REP=8;
+const samplerAgg = makeSampler(PARAMS.unid_hist);
+const samplersZona = PARAMS.unid_hist_zona.map(makeSampler);
+const UMBRAL = PARAMS.umbral;
+
+let mode='agg';
+
+// ---------- helpers ----------
+const $ = id => document.getElementById(id);
+const escalarTasa = (arr,k) => arr.map(v=>v*k);
+function repartoVol(total){
+  const zonas=PARAMS.zonas, pesos=zonas.map(z=>PARAMS.vol_zona[z]);
+  const s=pesos.reduce((a,b)=>a+b,0);
+  const raw=pesos.map(p=>total*p/s), asig=raw.map(r=>Math.round(r));
+  let diff=total-asig.reduce((a,b)=>a+b,0);
+  const order=[...raw.keys()].sort((a,b)=>raw[b]-raw[a]); let i=0;
+  while(diff!==0){ const j=order[i%order.length];
+    if(diff>0){asig[j]++;diff--;} else if(asig[j]>0){asig[j]--;diff++;} i++; }
+  return asig;
+}
+
+// ---------- corridas ----------
+function corridaAgg(flota, tasa, serv, nrep, dias){
+  const v=[]; let util=0, at=0, bl=0;
+  for(let i=0;i<nrep;i++){ const r=simReplicaAgregado(flota,tasa,samplerAgg,serv,dias,WARMUP,makeRng(42+i));
+    v.push(r.pBloqueo); util+=r.util; at+=r.atend; bl+=r.bloq; }
+  return {...resumen(v), util:util/nrep, at:at/nrep, bl:bl/nrep};
+}
+function corridaZon(flotaArr, tasaZ, serv, refuerzo, nrep, dias){
+  const v=[]; let ref=0, at=0, bl=0; const bz=new Array(PARAMS.zonas.length).fill(0);
+  for(let i=0;i<nrep;i++){ const r=simReplicaZonas(flotaArr,tasaZ,samplersZona,serv,dias,WARMUP,makeRng(42+i),refuerzo);
+    v.push(r.pBloqueo); ref+=r.pctRefuerzo; at+=r.atend; bl+=r.bloq; r.bloqZona.forEach((x,j)=>bz[j]+=x); }
+  return {...resumen(v), pctRef:ref/nrep, at:at/nrep, bl:bl/nrep, bloqZona:bz.map(x=>x/nrep)};
+}
+
+// ---------- render ----------
+function fmt(x,d=1){return x.toFixed(d);}
+function badge(m){ return m<=UMBRAL ? '<span class="badge ok">≤5%</span>' : '<span class="badge bad">&gt;5%</span>'; }
+
+function run(){
+  const serv=+$('rServ').value, dem=+$('rDem').value;
+  $('oServ').textContent=serv+' min'; $('oDem').textContent='×'+dem.toFixed(1);
+  if(mode==='agg'){
+    const flota=+$('rFlota').value; $('oFlota').textContent=flota;
+    const tasa=escalarTasa(PARAMS.tasa_horaria,dem);
+    const r=corridaAgg(flota,tasa,serv,NREP,DIAS);
+    $('kBloq').textContent=fmt(r.media)+'%'; $('kBadge').innerHTML=badge(r.media);
+    $('kBloq').style.color = r.media<=UMBRAL ? 'var(--ok)' : 'var(--bad)';
+    $('kIC').textContent='IC 95%: ['+fmt(r.low)+', '+fmt(r.high)+']';
+    $('kA').textContent=Math.round(r.at); $('kB').textContent=fmt(r.bl,1);
+    $('kXl').textContent='Utilización media'; $('kX').textContent=fmt(r.util*100)+'%';
+    const sweep=[]; for(let f=1;f<=15;f++) sweep.push(corridaAgg(f,tasa,serv,SWEEP_REP,DIAS).media);
+    $('chartTitle').textContent='Probabilidad de bloqueo vs. flota (punto rojo = flota actual)';
+    drawCurve(sweep, flota);
+  } else {
+    const total=+$('rFlota').value; $('oFlota').textContent=total+' (repartidas por volumen)';
+    const flotaArr=repartoVol(total), tasaZ=PARAMS.tasa_horaria_zona.map(r=>escalarTasa(r,dem));
+    const refuerzo=$('cRef').checked;
+    const r=corridaZon(flotaArr,tasaZ,serv,refuerzo,NREP,DIAS);
+    $('kBloq').textContent=fmt(r.media)+'%'; $('kBadge').innerHTML=badge(r.media);
+    $('kBloq').style.color = r.media<=UMBRAL ? 'var(--ok)' : 'var(--bad)';
+    $('kIC').textContent='IC 95%: ['+fmt(r.low)+', '+fmt(r.high)+']';
+    $('kA').textContent=Math.round(r.at); $('kB').textContent=fmt(r.bl,1);
+    $('kXl').textContent='Atenciones con refuerzo'; $('kX').textContent=refuerzo? fmt(r.pctRef)+'%' : '—';
+    $('chartTitle').textContent='Bloqueo por comuna (u = unidades asignadas)';
+    drawBars(r.bloqZona, flotaArr);
+  }
+  $('status').textContent='';
+}
+
+// ---------- canvas ----------
+const cv=$('chart'), cx=cv.getContext('2d');
+function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
+function clear(){ cx.clearRect(0,0,cv.width,cv.height); }
+function drawCurve(vals, cur){
+  clear(); const W=cv.width,H=cv.height, mL=48,mR=16,mT=16,mB=42;
+  const maxY=Math.max(10, Math.ceil(Math.max(...vals)/10)*10);
+  const X=f=>mL+(f-1)/(15-1)*(W-mL-mR), Y=v=>H-mB-(v/maxY)*(H-mT-mB);
+  cx.strokeStyle=css('--line'); cx.fillStyle=css('--muted'); cx.lineWidth=1; cx.font='12px system-ui';
+  // ejes y grilla
+  for(let g=0;g<=maxY;g+=maxY/5){ const y=Y(g); cx.strokeStyle=css('--line'); cx.beginPath();cx.moveTo(mL,y);cx.lineTo(W-mR,y);cx.stroke();
+    cx.fillText(g.toFixed(0)+'%', 6, y+4); }
+  for(let f=1;f<=15;f+=2){ cx.fillText(f, X(f)-3, H-mB+18); }
+  cx.fillText('Flota (unidades)', W/2-40, H-6);
+  // umbral 5%
+  cx.strokeStyle=css('--muted'); cx.setLineDash([5,4]); cx.beginPath();cx.moveTo(mL,Y(UMBRAL));cx.lineTo(W-mR,Y(UMBRAL));cx.stroke(); cx.setLineDash([]);
+  cx.fillText('umbral 5%', W-mR-70, Y(UMBRAL)-5);
+  // curva
+  cx.strokeStyle=css('--agg'); cx.lineWidth=2.5; cx.beginPath();
+  vals.forEach((v,i)=>{ const x=X(i+1),y=Y(v); i?cx.lineTo(x,y):cx.moveTo(x,y); }); cx.stroke();
+  vals.forEach((v,i)=>{ cx.fillStyle=css('--agg'); cx.beginPath();cx.arc(X(i+1),Y(v),3,0,7); cx.fill(); });
+  // punto actual
+  const yv=vals[cur-1]; cx.fillStyle=css('--bad'); cx.beginPath();cx.arc(X(cur),Y(yv),6,0,7);cx.fill();
+  cx.fillStyle=css('--ink'); cx.font='bold 13px system-ui'; cx.fillText(yv.toFixed(1)+'%', X(cur)+9, Y(yv)-6);
+}
+function drawBars(vals, flotaArr){
+  clear(); const W=cv.width,H=cv.height, mL=40,mR=12,mT=16,mB=74, n=vals.length;
+  const maxY=100, bw=(W-mL-mR)/n*0.72, gap=(W-mL-mR)/n;
+  const Y=v=>H-mB-(v/maxY)*(H-mT-mB);
+  cx.font='11px system-ui';
+  for(let g=0;g<=100;g+=20){ const y=Y(g); cx.strokeStyle=css('--line');cx.beginPath();cx.moveTo(mL,y);cx.lineTo(W-mR,y);cx.stroke();
+    cx.fillStyle=css('--muted');cx.fillText(g+'%',6,y+4); }
+  cx.strokeStyle=css('--muted');cx.setLineDash([5,4]);cx.beginPath();cx.moveTo(mL,Y(UMBRAL));cx.lineTo(W-mR,Y(UMBRAL));cx.stroke();cx.setLineDash([]);
+  vals.forEach((v,i)=>{ const x=mL+i*gap+(gap-bw)/2, y=Y(v);
+    cx.fillStyle=css('--zon'); cx.fillRect(x,y,bw,H-mB-y);
+    cx.fillStyle=css('--muted'); cx.save(); cx.translate(x+bw/2, H-mB+6); cx.rotate(-Math.PI/4);
+    const nm=PARAMS.zonas[i].length>11?PARAMS.zonas[i].slice(0,10)+'…':PARAMS.zonas[i];
+    cx.textAlign='right'; cx.fillText(nm+' ('+flotaArr[i]+'u)',0,0); cx.restore(); });
+}
+
+// ---------- eventos ----------
+let timer=null;
+function schedule(){ $('status').textContent='calculando…'; clearTimeout(timer); timer=setTimeout(run,50); }
+['rFlota','rServ','rDem','cRef'].forEach(id=>$(id).addEventListener('input',schedule));
+function setMode(m){
+  mode=m;
+  $('mAgg').classList.toggle('active',m==='agg');
+  $('mZon').classList.toggle('active',m==='zon');
+  const zon=m==='zon';
+  $('wrapRef').style.display=zon?'flex':'none';
+  $('lblFlota').textContent=zon?'Flota total (repartida por volumen)':'Flota (unidades)';
+  $('rFlota').min=zon?3:1; $('rFlota').max=zon?20:15; if(zon && +$('rFlota').value<3)$('rFlota').value=7;
+  $('modeDesc').textContent=zon
+    ? 'Cada comuna tiene su propia flota (repartida proporcional a su volumen). Sin refuerzo, cada comuna es una mini-cola aislada.'
+    : 'Una sola flota atiende toda la RM (recursos compartidos: la mejor de las organizaciones).';
+  document.body.classList.toggle('zon',zon);
+  sizeCanvas(); run();
+}
+$('mAgg').addEventListener('click',()=>setMode('agg'));
+$('mZon').addEventListener('click',()=>setMode('zon'));
+function sizeCanvas(){ const w=Math.min(880, cv.parentElement.clientWidth-36); cv.width=Math.max(280,w); cv.height=mode==='zon'?360:340; }
+window.addEventListener('resize',()=>{clearTimeout(timer);timer=setTimeout(()=>{sizeCanvas();run();},120);});
+
+// init
+setMode('agg');
+</script>
+</body>
 </html>
