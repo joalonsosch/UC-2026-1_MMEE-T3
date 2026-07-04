@@ -11,16 +11,16 @@
 | `despacho_recursos.ipynb` | Notebook principal (Datos → Modelo → Motor → Verificación → Experimentos → Sensibilidad → Figuras → Export web). |
 | `src/motor.py` | Motor de simulación (copia idéntica a las celdas del notebook): `generar_llegadas`, `muestrear_unidades`, `muestrear_servicio`, `simular_replica_agregado`, `simular_replica_zonas`. |
 | `requirements.txt` | numpy, pandas, openpyxl, matplotlib. |
-| `datos_procesados.csv` | Dataset limpio (10.079 filas; columnas de apoyo `hora`, `n_unidades`, `zona`). |
-| `parametros.npz` | Parámetros empíricos: `tasa_horaria`, `tasa_horaria_zona`, `unidades_muestra`, `unidades_muestra_zona`, `zonas_orden`. |
-| `resultados_escenarios.csv` | 3 escenarios × 2 resoluciones, con media, sd e IC 95%. |
-| `sensibilidad_servicio.csv` | Barrido de media de servicio (30/45/60 min). |
-| `sensibilidad_flota.csv` | Barrido de flota (1→15). |
-| `sensibilidad_demanda.csv` | Barrido de escala de demanda (×1,0 / ×1,2 / ×1,5). |
+| `data/datos_procesados.csv` | Dataset limpio (10.079 filas; columnas de apoyo `hora`, `n_unidades`, `zona`). |
+| `data/parametros.npz` | Parámetros empíricos: `tasa_horaria`, `tasa_horaria_zona`, `unidades_muestra`, `unidades_muestra_zona`, `zonas_orden`. |
+| `resultados/resultados_escenarios.csv` | 3 escenarios × 2 resoluciones, con media, sd e IC 95%. |
+| `resultados/sensibilidad_servicio.csv` | Barrido de media de servicio (30/45/60 min). |
+| `resultados/sensibilidad_flota.csv` | Barrido de flota (1→15). |
+| `resultados/sensibilidad_demanda.csv` | Barrido de escala de demanda (×1,0 / ×1,2 / ×1,5). |
 | `figuras/` | 6 PNG a 150 dpi: `val_perfil_horario`, `fig_escenarios`, `fig_bloqueo_comuna`, `fig_agregado_vs_zonal`, `fig_sens_flota`, `fig_sens_servicio`. |
-| `web_params.json` | Parámetros exportados para la página web. |
-| `README.md` | Instrucciones de reproducción. |
-| `../index.html` | Simulador interactivo (JavaScript). Publicado en GitHub Pages. |
+| `web/web_params.json` | Parámetros exportados para la página web. |
+| `../../README.md` (raíz del repo) | Instrucciones de reproducción. |
+| `../../index.html` | Simulador interactivo (JavaScript). Publicado en GitHub Pages. |
 
 ## Configuración fijada
 
