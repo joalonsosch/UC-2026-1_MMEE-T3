@@ -148,6 +148,16 @@ despacho_recursos.ipynb  ──(exporta)──►  web/web_params.json  ──(s
 
 ---
 
+## Resultados (probabilidad de bloqueo, IC 95 %)
+
+Dotación base `FLOTA_BASE = 7`. Detalle completo en `resultados/resultados_escenarios.csv`.
+
+| Escenario | Agregado | Por comuna |
+|---|---|---|
+| Base | 5,2 % [5,0–5,4] | 60,2 % [59,8–60,6] |
+| Alt-1 (recorte −20 %) | 8,5 % [8,2–8,8] | 65,8 % [65,4–66,2] |
+| Alt-2 (redistribución) | 5,2 % [5,0–5,4] | 46,4 % [45,9–46,9] |
+
 ## Parámetros del modelo (fijados)
 
 | Parámetro | Valor |
